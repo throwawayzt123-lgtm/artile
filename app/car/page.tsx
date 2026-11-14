@@ -36,6 +36,8 @@ export default function CarPage() {
   const [modelUrl, setModelUrl] = useState<string | null>(null)
   const [origin, setOrigin] = useState('')
   const [isDesktop, setIsDesktop] = useState(false)
+  const [demo, setDemo] = useState(false)
+  const [progress, setProgress] = useState(0)
 
   // Preview URLs, revoked whenever the selection changes or on unmount.
   const previews = useMemo(
@@ -79,6 +81,9 @@ export default function CarPage() {
     if (!allSelected) return
     setLoading(true)
     setError(null)
+    setDemo(false)
+    setModelUrl(null)
+    setProgress(0)
     try {
       const body = new FormData()
       for (const { key } of VIEWS) body.append(key, await shrinkImage(files[key]!))
@@ -86,7 +91,23 @@ export default function CarPage() {
       const res = await fetch('/api/generate-car', { method: 'POST', body })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Generation failed.')
-      setModelUrl(data.modelUrl)
+
+      if (data.demo) {
+        setDemo(true)
+        setModelUrl(data.modelUrl)
+        return
+      }
+
+      // Real generation: poll the task until it finishes (typically 1-5 minutes).
+      for (let i = 0; i < 150; i++) {
+        await new Promise((r) => setTimeout(r, 4000))
+        const st = await (await fetch(`/api/generate-car/status?id=${data.taskId}`)).json()
+        if (st.error && !st.status) throw new Error(st.error)
+        setProgress(st.progress ?? 0)
+        if (st.status === 'SUCCEEDED' && st.modelUrl) return setModelUrl(st.modelUrl)
+        if (st.status === 'FAILED' || st.status === 'CANCELED') throw new Error(st.error || 'Generation failed.')
+      }
+      throw new Error('Timed out waiting for the 3D model.')
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -95,7 +116,8 @@ export default function CarPage() {
   }
 
   // The QR opens this page with the generated model preloaded (a raw .glb link would only download a file).
-  const handoffUrl = modelUrl && origin ? `${origin}/car?model=${encodeURIComponent(modelUrl)}` : ''
+  const handoffUrl =
+    modelUrl && origin ? `${origin}/car?model=${encodeURIComponent(new URL(modelUrl, origin).href)}` : ''
 
   return (
     <div>
@@ -155,10 +177,18 @@ export default function CarPage() {
               {loading ? (
                 <div className="flex flex-col items-center gap-4 text-stone-500">
                   <div className="h-10 w-10 animate-spin rounded-full border-4 border-stone-300 border-t-stone-700" />
-                  <p className="text-sm">Building your 3D car… this can take a few minutes.</p>
+                  <p className="text-sm">Building your 3D car… {progress}% (can take a few minutes)</p>
                 </div>
               ) : modelUrl ? (
-                <CarModelViewer src={modelUrl} />
+                <>
+                  <CarModelViewer src={modelUrl} />
+                  {demo && (
+                    <p className="absolute left-3 right-3 top-3 rounded-lg bg-amber-100 px-3 py-2 text-xs text-amber-900">
+                      Demo mode: this is a placeholder model, not generated from your photos. Set MESHY_API_KEY to
+                      enable real generation.
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="max-w-xs px-6 text-center text-sm text-stone-500">
                   Your 3D car will appear here once it’s generated.
