@@ -13,6 +13,7 @@ const TILE = {
 const WIDTH = 1.83
 const HEIGHT = 1.83
 const THICKNESS = 0.01
+const DEFAULT_TILE_IMAGE = '/tile.jpg'
 const MAX_TEXTURE_SIZE = 2048 // keeps the .glb light enough for phones
 
 function loadTexture(url) {
@@ -89,6 +90,9 @@ export default function App() {
   const glbUrlRef = useRef(null)
   const jobRef = useRef(0)
   const fileInputRef = useRef(null)
+  const viewerRef = useRef(null)
+  const [placement, setPlacement] = useState('wall')
+  const [arSupported, setArSupported] = useState(null)
 
   const setModelUrl = useCallback((next) => {
     if (glbUrlRef.current) URL.revokeObjectURL(glbUrlRef.current)
@@ -105,37 +109,71 @@ export default function App() {
     [],
   )
 
-  const handleFile = useCallback(
-    async (event) => {
-      const file = event.target.files?.[0]
-      event.target.value = '' // allow re-selecting the same file
-      if (!file) return
-
-      if (!file.type.startsWith('image/')) {
-        setError('Please choose an image file (JPG, PNG or WebP).')
-        return
-      }
-
+  const buildModel = useCallback(
+    async (imageUrl, { revoke }) => {
       const job = ++jobRef.current
       setError(null)
       setLoading(true)
-
-      const imageUrl = URL.createObjectURL(file)
       try {
         const blob = await generateTileGlb(imageUrl)
-        if (job !== jobRef.current) return // a newer upload superseded this one
+        if (job !== jobRef.current) return // a newer request superseded this one
         setModelUrl(URL.createObjectURL(blob))
       } catch (err) {
         if (job !== jobRef.current) return
         console.error(err)
         setError(err?.message || 'Something went wrong while generating the 3D model.')
       } finally {
-        URL.revokeObjectURL(imageUrl) // the texture has been consumed; free the image blob
+        if (revoke) URL.revokeObjectURL(imageUrl) // texture consumed; free the image blob
         if (job === jobRef.current) setLoading(false)
       }
     },
     [setModelUrl],
   )
+
+  const handleFile = useCallback(
+    (event) => {
+      const file = event.target.files?.[0]
+      event.target.value = '' // allow re-selecting the same file
+      if (!file) return
+      if (!file.type.startsWith('image/')) {
+        setError('Please choose an image file (JPG, PNG or WebP).')
+        return
+      }
+      buildModel(URL.createObjectURL(file), { revoke: true })
+    },
+    [buildModel],
+  )
+
+  // Auto-load the bundled default tile (public/tile.jpg) so the AR button is
+  // available immediately on any device, e.g. a phone that just scanned the QR code.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(DEFAULT_TILE_IMAGE, { method: 'HEAD' })
+        const isImage = res.ok && (res.headers.get('content-type') || '').startsWith('image/')
+        if (!cancelled && isImage) buildModel(DEFAULT_TILE_IMAGE, { revoke: false })
+      } catch {
+        /* no default image: the user uploads one instead */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [buildModel])
+
+  // Detect whether this device/browser can actually launch AR.
+  useEffect(() => {
+    const el = viewerRef.current
+    if (!el) return undefined
+    const check = () => setArSupported(Boolean(el.canActivateAR))
+    el.addEventListener('load', check)
+    el.addEventListener('ar-status', check)
+    return () => {
+      el.removeEventListener('load', check)
+      el.removeEventListener('ar-status', check)
+    }
+  }, [glbUrl, placement])
 
   const pageUrl = typeof window !== 'undefined' ? window.location.href : ''
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(pageUrl)}`
@@ -161,11 +199,13 @@ export default function App() {
               <Spinner label="Generating 3D model…" />
             ) : glbUrl ? (
               <model-viewer
+                key={placement}
+                ref={viewerRef}
                 src={glbUrl}
                 alt={`3D model of ${TILE.name}`}
                 ar
                 ar-modes="webxr scene-viewer quick-look"
-                ar-placement="wall"
+                ar-placement={placement}
                 ar-scale="fixed"
                 camera-controls
                 touch-action="pan-y"
@@ -176,7 +216,7 @@ export default function App() {
                   slot="ar-button"
                   className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-stone-900 px-6 py-3 text-sm font-medium text-white shadow-lg transition hover:bg-stone-700"
                 >
-                  View on Your Wall (AR)
+                  {placement === 'wall' ? 'View on Your Wall (AR)' : 'View on Your Floor (AR)'}
                 </button>
               </model-viewer>
             ) : (
@@ -214,6 +254,34 @@ export default function App() {
               </a>
             )}
 
+            {glbUrl && (
+              <div className="mt-5">
+                <p className="text-xs font-medium uppercase tracking-wider text-stone-500">AR placement</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {['wall', 'floor'].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPlacement(p)}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${
+                        placement === p
+                          ? 'border-stone-900 bg-stone-900 text-white'
+                          : 'border-stone-300 text-stone-700 hover:bg-stone-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                {arSupported === false && (
+                  <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    AR isn’t available in this browser. Open this page on a phone: Chrome on Android (ARCore device)
+                    or Safari on iPhone.
+                  </p>
+                )}
+              </div>
+            )}
+
             {error && (
               <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
@@ -231,7 +299,7 @@ export default function App() {
               className="mx-auto mt-4 rounded-lg border border-stone-200"
             />
             <p className="mt-3 text-xs text-stone-500">
-              Scan to open this page on your phone, then tap “View on Your Wall (AR)”.
+              Scan to open this page on your phone, then tap the AR button under the tile.
             </p>
           </section>
         </aside>
