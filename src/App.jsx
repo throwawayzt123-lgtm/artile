@@ -43,14 +43,14 @@ async function generateTileGlb(imageUrl) {
     roughness: 0.85,
     metalness: 0,
   })
-  // BoxGeometry face order: +x, -x, +y, -y, +z (front), -z (back)
+  // BoxGeometry face order: +x, -x, +y, -y, +z (front), -z (back); front and back share the tile texture
   const mesh = new THREE.Mesh(geometry, [
     edgeMaterial,
     edgeMaterial,
     edgeMaterial,
     edgeMaterial,
     faceMaterial,
-    edgeMaterial,
+    faceMaterial, // back face also shows the tile design
   ])
   mesh.name = 'Tile'
 
