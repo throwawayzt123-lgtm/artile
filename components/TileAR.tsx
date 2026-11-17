@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { QRCodeSVG } from 'qrcode.react'
 import { useModelViewer } from '@/lib/useModelViewer'
+import CameraPreview from '@/components/CameraPreview'
 
 const TILE = {
   name: 'Etic Pro. Eucalipto Smoked',
@@ -93,6 +94,9 @@ export default function TileAR() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [previewUrl, setPreviewUrl] = useState(DEFAULT_TILE_IMAGE)
+  const [showCamera, setShowCamera] = useState(false)
+  const previewBlobRef = useRef<string | null>(null)
   const glbUrlRef = useRef<string | null>(null)
   const jobRef = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -112,6 +116,8 @@ export default function TileAR() {
     () => () => {
       if (glbUrlRef.current) URL.revokeObjectURL(glbUrlRef.current)
       glbUrlRef.current = null
+      if (previewBlobRef.current) URL.revokeObjectURL(previewBlobRef.current)
+      previewBlobRef.current = null
     },
     [],
   )
@@ -146,6 +152,10 @@ export default function TileAR() {
         setError('Please choose an image file (JPG, PNG or WebP).')
         return
       }
+      // Separate URL kept for the camera-overlay preview (the one passed to buildModel is revoked after use).
+      if (previewBlobRef.current) URL.revokeObjectURL(previewBlobRef.current)
+      previewBlobRef.current = URL.createObjectURL(file)
+      setPreviewUrl(previewBlobRef.current)
       buildModel(URL.createObjectURL(file), { revoke: true })
     },
     [buildModel],
@@ -297,6 +307,21 @@ export default function TileAR() {
               </div>
             )}
 
+            {glbUrl && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCamera(true)}
+                  className="w-full rounded-lg border border-stone-300 px-4 py-3 text-sm font-medium text-stone-800 transition hover:bg-stone-100"
+                >
+                  Camera Preview (any phone)
+                </button>
+                <p className="mt-1 text-xs text-stone-500">
+                  No AR support on your phone? Overlay the tile on your camera view instead.
+                </p>
+              </div>
+            )}
+
             {glbUrl?.startsWith('blob:') && (
               <p className="mt-4 text-xs text-stone-500">
                 Custom uploads open in AR on Chrome for Android (WebXR) and iPhone. The built-in tile works on all
@@ -322,6 +347,8 @@ export default function TileAR() {
           </section>
         </aside>
       </main>
+
+      {showCamera && <CameraPreview imageUrl={previewUrl} onClose={() => setShowCamera(false)} />}
     </div>
   )
 }
