@@ -248,7 +248,7 @@ export default function CarPage() {
                 ))}
               </div>
               <p className="mt-3 text-xs text-stone-500">
-                The colour you pick carries into AR on Chrome (Android) and iPhone.
+                The colour you pick carries into AR on Chrome (Android) and iPhone. In AR, pinch to make the car smaller or bigger.
               </p>
             </section>
           )}

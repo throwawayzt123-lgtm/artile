@@ -48,7 +48,7 @@ export default function CarModelViewer({ src, paint, orbit }: Props) {
       ar
       ar-modes="webxr scene-viewer quick-look"
       ar-placement="floor"
-      ar-scale="fixed"
+      ar-scale="auto"
       camera-controls
       camera-orbit={orbit}
       touch-action="pan-y"
