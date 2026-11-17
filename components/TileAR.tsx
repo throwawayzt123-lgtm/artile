@@ -18,6 +18,7 @@ const WIDTH = 1.83
 const HEIGHT = 1.83
 const THICKNESS = 0.01
 const DEFAULT_TILE_IMAGE = '/tile.jpg'
+const DEFAULT_TILE_GLB = '/tile.glb'
 const MAX_TEXTURE_SIZE = 2048 // keeps the .glb light enough for phones
 
 function loadTexture(url: string): Promise<THREE.Texture> {
@@ -150,12 +151,20 @@ export default function TileAR() {
     [buildModel],
   )
 
-  // Auto-load the bundled default tile (public/tile.jpg) so the AR button is
-  // available immediately on any device, e.g. a phone that just scanned the QR code.
+  // Load the bundled tile on startup so the AR button works immediately on any device.
+  // Preferred: the pre-built /tile.glb (public https URL, which Android Scene Viewer and iOS
+  // Quick Look can open). Fallback: build a model in the browser from /tile.jpg.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
+        const glb = await fetch(DEFAULT_TILE_GLB, { method: 'HEAD' })
+        const glbOk = glb.ok && !(glb.headers.get('content-type') || '').startsWith('text/')
+        if (cancelled) return
+        if (glbOk) {
+          setModelUrl(DEFAULT_TILE_GLB)
+          return
+        }
         const res = await fetch(DEFAULT_TILE_IMAGE, { method: 'HEAD' })
         const isImage = res.ok && (res.headers.get('content-type') || '').startsWith('image/')
         if (!cancelled && isImage) buildModel(DEFAULT_TILE_IMAGE, { revoke: false })
@@ -166,7 +175,7 @@ export default function TileAR() {
     return () => {
       cancelled = true
     }
-  }, [buildModel])
+  }, [buildModel, setModelUrl])
 
   // Detect whether this device/browser can actually launch AR.
   useEffect(() => {
@@ -286,6 +295,13 @@ export default function TileAR() {
                   </p>
                 )}
               </div>
+            )}
+
+            {glbUrl?.startsWith('blob:') && (
+              <p className="mt-4 text-xs text-stone-500">
+                Custom uploads open in AR on Chrome for Android (WebXR) and iPhone. The built-in tile works on all
+                AR-capable phones.
+              </p>
             )}
 
             {error && (
