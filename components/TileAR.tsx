@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { QRCodeSVG } from 'qrcode.react'
 import { useModelViewer } from '@/lib/useModelViewer'
+import Link from 'next/link'
 import CameraPreview from '@/components/CameraPreview'
 
 const TILE = {
@@ -306,6 +307,13 @@ export default function TileAR() {
                 )}
               </div>
             )}
+
+            <Link
+              href="/tile/wall"
+              className="mt-3 block w-full rounded-lg bg-stone-800 px-4 py-3 text-center text-sm font-medium text-white transition hover:bg-stone-600"
+            >
+              Design Your Wall (multiple tiles)
+            </Link>
 
             {glbUrl && (
               <div className="mt-3">
