@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import CarModelViewer from '@/components/CarModelViewer'
+import { findCar } from '@/lib/cars'
+import type { ShowroomCar } from '@/lib/cars'
 
 const VIEWS = [
   { key: 'front', label: 'Front' },
@@ -37,6 +39,8 @@ export default function CarPage() {
   const [origin, setOrigin] = useState('')
   const [isDesktop, setIsDesktop] = useState(false)
   const [demo, setDemo] = useState(false)
+  const [car, setCar] = useState<ShowroomCar | null>(null)
+  const [colorId, setColorId] = useState('original')
   const [progress, setProgress] = useState(0)
 
   // Preview URLs, revoked whenever the selection changes or on unmount.
@@ -54,8 +58,20 @@ export default function CarPage() {
     setOrigin(window.location.origin)
     setIsDesktop(window.matchMedia('(hover: hover) and (pointer: fine)').matches)
 
+    const params = new URLSearchParams(window.location.search)
+
+    // Showroom car: /car?car=bugatti-chiron&color=red
+    const showroom = findCar(params.get('car'))
+    if (showroom) {
+      setCar(showroom)
+      setModelUrl(showroom.src)
+      const c = params.get('color')
+      setColorId(showroom.colors.some((x) => x.id === c) ? (c as string) : 'original')
+      return
+    }
+
     // Handoff: a scanned QR opens /car?model=<https .glb url> and goes straight to the AR viewer.
-    const shared = new URLSearchParams(window.location.search).get('model')
+    const shared = params.get('model')
     if (shared) {
       try {
         if (new URL(shared).protocol === 'https:') setModelUrl(shared)
@@ -116,23 +132,35 @@ export default function CarPage() {
   }
 
   // The QR opens this page with the generated model preloaded (a raw .glb link would only download a file).
-  const handoffUrl =
-    modelUrl && origin ? `${origin}/car?model=${encodeURIComponent(new URL(modelUrl, origin).href)}` : ''
+  const handoffUrl = !modelUrl || !origin
+    ? ''
+    : car
+      ? `${origin}/car?car=${car.id}&color=${colorId}`
+      : `${origin}/car?model=${encodeURIComponent(new URL(modelUrl, origin).href)}`
+
+  const activeColor = car?.colors.find((c) => c.id === colorId)
+  const paint = car && activeColor ? { material: car.paintMaterial, hex: activeColor.hex } : undefined
 
   return (
     <div>
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-stone-500">Car AR</p>
-          <h1 className="mt-1 text-2xl font-semibold text-stone-900 sm:text-3xl">Car Visualizer</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-stone-900 sm:text-3xl">{car ? car.name : 'Car Visualizer'}</h1>
           <p className="mt-2 text-sm text-stone-600">
-            Upload four photos of a car, generate a 3D model, then park it in your driveway with AR.
+            {car
+              ? 'Pick a colour, then tap the AR button to park it in your driveway.'
+              : 'Upload four photos of a car, generate a 3D model, then park it in your driveway with AR.'}
           </p>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        {/* Upload dashboard */}
+      <main
+        className={`mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 ${
+          car ? 'max-w-3xl' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]'
+        }`}
+      >
+        {!car && (
         <form onSubmit={onSubmit} className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-stone-500">Reference photos</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
@@ -169,6 +197,7 @@ export default function CarPage() {
             </p>
           )}
         </form>
+        )}
 
         {/* Viewer + QR */}
         <div className="flex flex-col gap-6">
@@ -181,7 +210,7 @@ export default function CarPage() {
                 </div>
               ) : modelUrl ? (
                 <>
-                  <CarModelViewer src={modelUrl} />
+                  <CarModelViewer src={modelUrl} paint={paint} orbit={car?.cameraOrbit} />
                   {demo && (
                     <p className="absolute left-3 right-3 top-3 rounded-lg bg-amber-100 px-3 py-2 text-xs text-amber-900">
                       Demo mode: this is a placeholder model, not generated from your photos. Set MESHY_API_KEY to
@@ -196,6 +225,33 @@ export default function CarPage() {
               )}
             </div>
           </section>
+
+          {car && (
+            <section className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-stone-500">
+                {car.name} · Colour: <span className="text-stone-900">{activeColor?.name}</span>
+              </h2>
+              <div className="mt-4 flex flex-wrap gap-3">
+                {car.colors.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    title={c.name}
+                    aria-label={c.name}
+                    aria-pressed={c.id === colorId}
+                    onClick={() => setColorId(c.id)}
+                    className={`h-10 w-10 rounded-full border-2 transition ${
+                      c.id === colorId ? 'border-stone-900 ring-2 ring-stone-900 ring-offset-2' : 'border-stone-300'
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                  />
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-stone-500">
+                The colour you pick carries into AR on Chrome (Android) and iPhone.
+              </p>
+            </section>
+          )}
 
           {handoffUrl && isDesktop && (
             <section className="rounded-2xl border border-stone-200 bg-white p-6 text-center shadow-sm">
